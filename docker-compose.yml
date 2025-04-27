@@ -1,0 +1,97 @@
+# Docker Compose configuration for Manim Claude application
+
+services:
+  # Frontend React application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    networks:
+      - manim_network
+
+  # Backend FastAPI application
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MONGO_URI=mongodb://mongo:27017/manimdb
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - manim_network
+
+  # Manim rendering service
+  manim_renderer:
+    build:
+      context: ./manim
+      dockerfile: Dockerfile
+    volumes:
+      - ./manim:/manim
+      - ./manim/media:/manim/media
+    environment:
+      - DEFAULT_QUALITY=medium
+      - DEFAULT_RESOLUTION=720p
+    networks:
+      - manim_network
+
+  # MongoDB for data storage
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - manim_network
+
+  # Redis for task queue
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    networks:
+      - manim_network
+
+  # Celery worker for background tasks
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.worker worker --loglevel=info
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+      - backend
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MONGO_URI=mongodb://mongo:27017/manimdb
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    networks:
+      - manim_network
+
+networks:
+  manim_network:
+    driver: bridge
+
+volumes:
+  mongo_data:
